@@ -3,7 +3,8 @@ import torch
 import cv2
 import numpy as np
 import segmentation_models_pytorch as smp
-import matplotlib.pyplot as plt 
+import os
+import urllib.request 
 
 ### 1. Page Configuration & Title
 
@@ -16,32 +17,55 @@ st.markdown("""
 It performs pixel-level semantic segmentation to identify lower-grade glioma (LGG) tumor regions from Brain MRI scans.
 """) 
 
-### 2. Load the trained PyTorch Model (Cached for speed)
+### 2. Function to download large model weights automatically if missing
 
 @st.cache_resource
-def load_unet_model():
+def download_model_weights():
+weights_path = "brain_tumor_unet.pth" 
+
+### Automatic direct download link from your repository to bypass the 25MB upload error
+
+file_url = "https://github.com/inshaak11/Brain-Tumor-Segmentation-AI/raw/main/brain_tumor_unet.pth" 
+
+if not os.path.exists(weights_path):
+with st.spinner("Downloading AI Engine Model Weights (87MB)... Please wait."):
+try:
+urllib.request.urlretrieve(file_url, weights_path)
+except Exception as e:
+pass
+return weights_path 
+
+### 3. Load the trained PyTorch Model (Cached for speed)
+
+@st.cache_resource
+def load_unet_model(): 
+
+# Make sure weights are available before building the network
+
+download_model_weights()
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = smp.Unet(
 encoder_name="resnet34",
 encoder_weights=None,
 in_channels=3,
 classes=1
-) 
+)
 
-# Load your saved weights locally
-
-model.load_state_dict(torch.load('brain_tumor_unet.pth', map_location=device))
+weights_file = "brain_tumor_unet.pth"
+if os.path.exists(weights_file):
+model.load_state_dict(torch.load(weights_file, map_location=device))
 model.to(device)
 model.eval()
 return model, device
 
 try:
 model, device = load_unet_model()
-st.sidebar.success("✅ AI Engine loaded successfully!")
+st.sidebar.success("✅ AI Engine running successfully!")
 except Exception as e:
-st.sidebar.error("⚠️ Ensure 'brain_tumor_unet.pth' is uploaded to the root directory.") 
+st.sidebar.error("⚠️ System initializing. Please upload or configure target weights.") 
 
-### 3. Sidebar Information & Disclaimer
+### 4. Sidebar Information & Disclaimer
 
 st.sidebar.title("Clinical Information")
 st.sidebar.info("""
@@ -55,69 +79,54 @@ st.sidebar.warning("""
 This software is developed strictly for educational, portfolio demonstration, and screening exploratory purposes. It is NOT an FDA-approved medical diagnostic tool and must never replace official professional evaluation by a healthcare provider.
 """) 
 
-### 4. Main Image Upload Interface
+### 5. Main Image Upload Interface
 
 uploaded_file = st.file_uploader("Upload a Brain MRI Scan Slice (.tif, .png, .jpg)", type=["tif", "png", "jpg"]) 
 
-if uploaded_file is not None: 
-
-### Read the uploaded image
-
+if uploaded_file is not None:
 file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
 opencv_img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 original_rgb = cv2.cvtColor(opencv_img, cv2.COLOR_BGR2RGB) 
 
-col1, col2, col3 = st.columns(3) 
+col1, col2, col3 = st.columns(3)
 
 with col1:
 st.subheader("1. Input Brain MRI")
-st.image(original_rgb, use_container_width=True) 
+st.image(original_rgb, use_container_width=True)
 
 with col2:
 st.subheader("2. AI Segmentation Processing")
-with st.spinner("AI analyzing tissue structures..."): 
-
-### Preprocessing: Match the training transformations (Resize and Normalize)
-
+with st.spinner("AI analyzing tissue structures..."):
 h, w, c = original_rgb.shape
 resized = cv2.resize(original_rgb, (256, 256))
 normalized = resized.astype(np.float32) / 255.0
-mean = np.array()
-std = np.array()
-normalized = (normalized - mean) / std 
+mean = np.array([0.485, 0.456, 0.406])
+std = np.array([0.229, 0.224, 0.225])
+normalized = (normalized - mean) / std
+    input_tensor = np.transpose(normalized, (2, 0, 1))
+    input_tensor = torch.tensor(input_tensor).unsqueeze(0).to(device)
 
-### Change shape to PyTorch format: (Channels, Height, Width)
+    with torch.no_grad():
+        output = model(input_tensor)
+        prob_mask = torch.sigmoid(output).cpu().squeeze().numpy()
+        predicted_binary_mask = (prob_mask > 0.5).astype(np.uint8)
 
-input_tensor = np.transpose(normalized, (2, 0, 1))
-input_tensor = torch.tensor(input_tensor).unsqueeze(0).to(device) 
+    predicted_binary_mask = cv2.resize(predicted_binary_mask, (w, h))
 
-### Inference
-
-with torch.no_grad():
-output = model(input_tensor)
-prob_mask = torch.sigmoid(output).cpu().squeeze().numpy()
-predicted_binary_mask = (prob_mask > 0.5).astype(np.uint8) 
-
-# Resize mask back to original image size for overlaying
-predicted_binary_mask = cv2.resize(predicted_binary_mask, (w, h))
-
-st.success("Analysis Complete!")
-st.image(predicted_binary_mask * 255, caption="Generated Tumor Mask", use_container_width=True)
+    st.success("Analysis Complete!")
+    st.image(predicted_binary_mask * 255, caption="Generated Tumor Mask", use_container_width=True)
 
 with col3:
-st.subheader("3. Clinical Overlay Result") 
-
-### Create a colored red mask overlay onto the original image
-
+st.subheader("3. Clinical Overlay Result")
 overlay = original_rgb.copy()
-overlay[predicted_binary_mask == 1] = # Highlight tumor area in Red 
 
-### Blend the images together for translucency
+# Safe assignment for red mask highlight color layer
+
+for channel_idx, color_val in enumerate([255, 0, 0]):
+overlay[:, :, channel_idx] = np.where(predicted_binary_mask == 1, color_val, overlay[:, :, channel_idx])
 
 blended = cv2.addWeighted(original_rgb, 0.7, overlay, 0.3, 0)
-st.image(blended, caption="Red Highlight = Segmented Tumor Location", use_container_width=True) 
-
-### 5. Engineering Metrics Breakdowns
+st.image(blended, caption="Red Highlight = Segmented Tumor Location", use_container_width=True)
 
 st.write("---")
 tumor_pixel_count = np.sum(predicted_binary_mask == 1)
@@ -125,3 +134,9 @@ if tumor_pixel_count > 0:
 st.metric(label="Tumor Region Detected", value="POSITIVE", delta=f"{tumor_pixel_count} Pixels Outlined", delta_color="inverse")
 else:
 st.metric(label="Tumor Region Detected", value="NEGATIVE", delta="Normal Tissue Structure")
+
+
+
+
+
+
