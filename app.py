@@ -6,8 +6,6 @@ import segmentation_models_pytorch as smp
 import os
 import urllib.request 
 
-### 1. Page Configuration & Title
-
 st.set_page_config(page_title="AI Brain Tumor Segmentation", layout="wide")
 st.title("🧠 Medical Computer Vision: AI Brain Tumor Segmentation Tool")
 st.write("---") 
@@ -17,16 +15,10 @@ st.markdown("""
 It performs pixel-level semantic segmentation to identify lower-grade glioma (LGG) tumor regions from Brain MRI scans.
 """) 
 
-### 2. Function to download large model weights automatically if missing
-
 @st.cache_resource
 def download_model_weights():
-weights_path = "brain_tumor_unet.pth" 
-
-### Automatic direct download link from your repository to bypass the 25MB upload error
-
-file_url = "https://github.com/inshaak11/Brain-Tumor-Segmentation-AI/raw/main/brain_tumor_unet.pth" 
-
+weights_path = "brain_tumor_unet.pth"
+file_url = "https://github.com/inshaak11/Brain-Tumor-Segmentation-AI/raw/main/brain_tumor_unet.pth"
 if not os.path.exists(weights_path):
 with st.spinner("Downloading AI Engine Model Weights (87MB)... Please wait."):
 try:
@@ -35,15 +27,9 @@ except Exception as e:
 pass
 return weights_path 
 
-### 3. Load the trained PyTorch Model (Cached for speed)
-
 @st.cache_resource
-def load_unet_model(): 
-
-# Make sure weights are available before building the network
-
+def load_unet_model():
 download_model_weights()
-
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = smp.Unet(
 encoder_name="resnet34",
@@ -51,21 +37,18 @@ encoder_weights=None,
 in_channels=3,
 classes=1
 )
-
 weights_file = "brain_tumor_unet.pth"
 if os.path.exists(weights_file):
 model.load_state_dict(torch.load(weights_file, map_location=device))
 model.to(device)
 model.eval()
-return model, device
+return model, device 
 
 try:
 model, device = load_unet_model()
 st.sidebar.success("✅ AI Engine running successfully!")
 except Exception as e:
 st.sidebar.error("⚠️ System initializing. Please upload or configure target weights.") 
-
-### 4. Sidebar Information & Disclaimer
 
 st.sidebar.title("Clinical Information")
 st.sidebar.info("""
@@ -78,8 +61,6 @@ st.sidebar.warning("""
 ⚠️ **Clinical Disclaimer:**
 This software is developed strictly for educational, portfolio demonstration, and screening exploratory purposes. It is NOT an FDA-approved medical diagnostic tool and must never replace official professional evaluation by a healthcare provider.
 """) 
-
-### 5. Main Image Upload Interface
 
 uploaded_file = st.file_uploader("Upload a Brain MRI Scan Slice (.tif, .png, .jpg)", type=["tif", "png", "jpg"]) 
 
@@ -119,11 +100,8 @@ normalized = (normalized - mean) / std
 with col3:
 st.subheader("3. Clinical Overlay Result")
 overlay = original_rgb.copy()
-
-# Safe assignment for red mask highlight color layer
-
 for channel_idx, color_val in enumerate([255, 0, 0]):
-overlay[:, :, channel_idx] = np.where(predicted_binary_mask == 1, color_val, overlay[:, :, channel_idx])
+    overlay[:, :, channel_idx] = np.where(predicted_binary_mask == 1, color_val, overlay[:, :, channel_idx])
 
 blended = cv2.addWeighted(original_rgb, 0.7, overlay, 0.3, 0)
 st.image(blended, caption="Red Highlight = Segmented Tumor Location", use_container_width=True)
@@ -135,6 +113,13 @@ st.metric(label="Tumor Region Detected", value="POSITIVE", delta=f"{tumor_pixel_
 else:
 st.metric(label="Tumor Region Detected", value="NEGATIVE", delta="Normal Tissue Structure")
 
+
+
+
+
+
+
+   
 
 
 
