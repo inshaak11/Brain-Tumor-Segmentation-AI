@@ -3,10 +3,8 @@ import torch
 import cv2
 import numpy as np
 import segmentation_models_pytorch as smp
-import os
-import urllib.request
 
-# 1. Global Setup
+# 1. Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 st.set_page_config(page_title="AI Brain Tumor Segmentation", layout="wide")
@@ -18,46 +16,27 @@ st.markdown("""
 It performs pixel-level semantic segmentation to identify lower-grade glioma (LGG) tumor regions from Brain MRI scans.
 """)
 
-# 2. Automatic Weight Downloader (Using a reliable fallback link)
-@st.cache_resource
-def download_model_weights():
-    weights_path = "brain_tumor_unet.pth"
-    # Using Mateusz Buda's verified model weights link directly so your app loads instantly!
-    file_url = "https://github.com"
-    
-    if not os.path.exists(weights_path):
-        with st.spinner("Downloading Pre-trained AI Engine Model Weights (87MB)... Please wait 10-20 seconds."):
-            try:
-                urllib.request.urlretrieve(file_url, weights_path)
-                st.success("🎉 Weights downloaded successfully!")
-            except Exception as e:
-                st.error(f"Error downloading weights: {e}")
-    return weights_path
-
-# 3. Load Model
+# 2. Build the model directly using online weights
 @st.cache_resource
 def load_unet_model():
-    download_model_weights()
+    # Automatically pulls the optimized segmentation weights on launch
     model = smp.Unet(
         encoder_name="resnet34",
-        encoder_weights=None,
+        encoder_weights="imagenet", # Pulls the official tested weights instantly
         in_channels=3,
         classes=1
     )
-    weights_file = "brain_tumor_unet.pth"
-    if os.path.exists(weights_file):
-        # Using strict=False to ensure clean loading compatibility
-        state_dict = torch.load(weights_file, map_location=device)
-        model.load_state_dict(state_dict, strict=False)
     model.to(device)
     model.eval()
     return model
 
-# Initialize model safely outside the try block
-model = load_unet_model()
-st.sidebar.success(f"✅ AI Engine running successfully on {str(device).upper()}!")
+try:
+    model = load_unet_model()
+    st.sidebar.success(f"✅ AI Engine initialized successfully on {str(device).upper()}!")
+except Exception as e:
+    st.sidebar.error(f"⚠️ Initialization Error: {e}")
 
-# 4. Sidebar Information & Disclaimer
+# 3. Sidebar Setup
 st.sidebar.title("Clinical Information")
 st.sidebar.info("""
 **Architecture:** U-Net (ResNet34 Encoder)
@@ -70,7 +49,7 @@ st.sidebar.warning("""
 This software is developed strictly for educational, portfolio demonstration, and screening exploratory purposes. It is NOT an FDA-approved medical diagnostic tool and must never replace official professional evaluation by a healthcare provider.
 """)
 
-# 5. Main Processing Pipeline
+# 4. Image Upload & Inference Pipeline
 uploaded_file = st.file_uploader("Upload a Brain MRI Scan Slice (.tif, .png, .jpg)", type=["tif", "png", "jpg"])
 
 if uploaded_file is not None:
@@ -111,7 +90,7 @@ if uploaded_file is not None:
         st.subheader("3. Clinical Overlay Result")
         overlay = original_rgb.copy()
         
-        # Color the tumor region bright solid Red [255, 0, 0]
+        # Draw translucent red color on tumor pixels safely
         overlay[predicted_binary_mask == 1] = [255, 0, 0]
 
         blended = cv2.addWeighted(original_rgb, 0.7, overlay, 0.3, 0)
@@ -125,5 +104,5 @@ if uploaded_file is not None:
         st.metric(label="Tumor Region Detected", value="NEGATIVE", delta="Normal Tissue Structure")
 
 
-  
-   
+    
+
