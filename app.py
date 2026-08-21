@@ -6,6 +6,9 @@ import segmentation_models_pytorch as smp
 import os
 import urllib.request
 
+# Force explicit globally stable device configuration
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 st.set_page_config(page_title="AI Brain Tumor Segmentation", layout="wide")
 st.title("🧠 Medical Computer Vision: AI Brain Tumor Segmentation Tool")
 st.write("---")
@@ -30,7 +33,6 @@ def download_model_weights():
 @st.cache_resource
 def load_unet_model():
     download_model_weights()
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = smp.Unet(
         encoder_name="resnet34",
         encoder_weights=None,
@@ -42,11 +44,11 @@ def load_unet_model():
         model.load_state_dict(torch.load(weights_file, map_location=device))
     model.to(device)
     model.eval()
-    return model, device
+    return model
 
 try:
-    model, device = load_unet_model()
-    st.sidebar.success("✅ AI Engine running successfully!")
+    model = load_unet_model()
+    st.sidebar.success(f"✅ AI Engine running successfully on {str(device).upper()}!")
 except Exception as e:
     st.sidebar.error("⚠️ System initializing. Please upload or configure target weights.")
 
@@ -102,7 +104,9 @@ if uploaded_file is not None:
         st.subheader("3. Clinical Overlay Result")
         overlay = original_rgb.copy()
         
-        for channel_idx, color_val in enumerate([255, 0, 0]):
+        # Explicit RGB coloring bounds definition for solid red highlight
+        red_rgb_bounds = [255, 0, 0]
+        for channel_idx, color_val in enumerate(red_rgb_bounds):
             overlay[:, :, channel_idx] = np.where(predicted_binary_mask == 1, color_val, overlay[:, :, channel_idx])
 
         blended = cv2.addWeighted(original_rgb, 0.7, overlay, 0.3, 0)
@@ -114,3 +118,9 @@ if uploaded_file is not None:
         st.metric(label="Tumor Region Detected", value="POSITIVE", delta=f"{tumor_pixel_count} Pixels Outlined", delta_color="inverse")
     else:
         st.metric(label="Tumor Region Detected", value="NEGATIVE", delta="Normal Tissue Structure")
+
+
+   
+
+       
+ 
