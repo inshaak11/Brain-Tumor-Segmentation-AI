@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import segmentation_models_pytorch as smp
 
-# 1. Device configuration
+# 1. Stable Device Configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 st.set_page_config(page_title="AI Brain Tumor Segmentation", layout="wide")
@@ -16,13 +16,12 @@ st.markdown("""
 It performs pixel-level semantic segmentation to identify lower-grade glioma (LGG) tumor regions from Brain MRI scans.
 """)
 
-# 2. Build the model directly using online weights
+# 2. Build the model directly using online weights stable initialization
 @st.cache_resource
 def load_unet_model():
-    # Automatically pulls the optimized segmentation weights on launch
     model = smp.Unet(
         encoder_name="resnet34",
-        encoder_weights="imagenet", # Pulls the official tested weights instantly
+        encoder_weights="imagenet", 
         in_channels=3,
         classes=1
     )
@@ -55,6 +54,11 @@ uploaded_file = st.file_uploader("Upload a Brain MRI Scan Slice (.tif, .png, .jp
 if uploaded_file is not None:
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     opencv_img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+    
+    # CRITICAL FIX: Explicitly slice out the first 3 channels (BGR) to eliminate hidden TIFF alpha channels
+    if opencv_img.shape[2] > 3:
+        opencv_img = opencv_img[:, :, :3]
+        
     original_rgb = cv2.cvtColor(opencv_img, cv2.COLOR_BGR2RGB)
 
     col1, col2, col3 = st.columns(3)
@@ -74,7 +78,9 @@ if uploaded_file is not None:
             normalized = (normalized - mean) / std
 
             input_tensor = np.transpose(normalized, (2, 0, 1))
-            input_tensor = torch.tensor(input_tensor).unsqueeze(0).to(device)
+            
+            # Explicitly force float32 tensor conversion matching the ResNet standard weights
+            input_tensor = torch.tensor(input_tensor, dtype=torch.float32).unsqueeze(0).to(device)
 
             with torch.no_grad():
                 output = model(input_tensor)
@@ -90,7 +96,7 @@ if uploaded_file is not None:
         st.subheader("3. Clinical Overlay Result")
         overlay = original_rgb.copy()
         
-        # Draw translucent red color on tumor pixels safely
+        # Color the tumor region bright solid Red
         overlay[predicted_binary_mask == 1] = [255, 0, 0]
 
         blended = cv2.addWeighted(original_rgb, 0.7, overlay, 0.3, 0)
@@ -103,6 +109,10 @@ if uploaded_file is not None:
     else:
         st.metric(label="Tumor Region Detected", value="NEGATIVE", delta="Normal Tissue Structure")
 
+
+
+
+     
 
     
 
